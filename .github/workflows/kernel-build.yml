@@ -1,66 +1,80 @@
-name: Build Pixel 7a (Lynx) kernel with Halium 13
+name: Build Pixel 7a (Lynx) Kernel (5.10) with Halium 13
 
 on:
-  push:
-    branches:
-    - 'main'
-    pull_request:
-      - 'main'
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-20.04
-
+  build-kernel:
+    runs-on: ubuntu-latest
     steps:
-# repo klónozása
-      - name: Check out Droidian-Lynx-port repository
-        uses: actions/checkout@v3
+      # 1. Repository klónozása
+      - uses: actions/checkout@v4
 
-# Halium 13 letöltése
-      - name: Download Halium 13
+      # 2. Környezeti változók beállítása
+      - name: Setup environment
+        run: |
+          echo "ANYKERNEL_SOURCE=$(cat config.env | grep -w "ANYKERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+          echo "ANYKERNEL_SOURCE_BRANCH=$(cat config.env | grep -w "ANYKERNEL_SOURCE_BRANCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+          echo "KERNEL_SOURCE=https://github.com/pisti87/android_kernel_google_gs201" >> $GITHUB_ENV
+          echo "KERNEL_SOURCE_BRANCH=main" >> $GITHUB_ENV
+          echo "KERNEL_CONFIG=lynx_defconfig" >> $GITHUB_ENV
+          echo "BUILD_ARGS=" >> $GITHUB_ENV
+
+      # 3. Toolchain letöltése (Android 5.10 kernelhez)
+      - name: Pull toolchain
+        run: |
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
+          mkdir clang && curl https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-dev/clang-r487747c.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
+
+      # 4. Kernel forrás klónozása
+      - name: Pull kernel source
+        run: |
+          git clone --depth=1 ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} kernel-source
+
+      # 5. Halium 13 patch-ek alkalmazása
+      - name: Apply Halium 13 patches
         run: |
           git clone https://github.com/Halium/android -b halium-13.0 halium
+          cd kernel-source
+          git am ../halium/patches/halium-13.0/*.patch || echo "Patch application failed"
 
-# Kernel klónozása
-      - name: Clone Kernel Source
+      # 6. Kernel fordítása (5.10 kernelhez)
+      - name: Build kernel
         run: |
-          git clone https://github.com/LineageOS/android_kernel_google_gs201 -b lineage-20 kernel
+          export KBUILD_BUILD_USER="pisti87"
+          export KBUILD_BUILD_HOST="workspace"
+          export PATH=$GITHUB_WORKSPACE/clang/bin:${PATH}
+          args="                  ARCH=arm64 \
+                                  O=../out \
+                                  ${{ env.BUILD_ARGS }} \
+                                  CLANG_TRIPLE=aarch64-linux-gnu- \
+                                  CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
+                                  CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- "
+          cd kernel-source
+          make ${args} ${{ env.KERNEL_CONFIG }}
+          make -j$(($(getconf _NPROCESSORS_ONLN) * 2)) ${args}
 
-# patchek alkalmazása
-      - name: Apply Halium 13 patches
-        run: | 
-            cd kernel 
-            git am ../halium/patches/halium-13.0*.patch || echo "Patch application failed"
-
-# eszközök telepítése
-      - name: Install dependencies
+      # 7. Kernel csomagolása
+      - name: Package kernel
         run: |
-            sudo apt update
-            sudo apt install -y build-essential gcc-aarch64-linux-gnu bc bison flex libssl-dev
+          git clone --depth=1 ${{ env.ANYKERNEL_SOURCE }} -b ${{ env.ANYKERNEL_SOURCE_BRANCH }} AnyKernel3 && rm -rf AnyKernel3/.git AnyKernel3/.github AnyKernel3/LICENSE AnyKernel3/README.md
+          if [[ -f out/arch/arm64/boot/Image.gz-dtb ]]; then
+            cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/Image.gz-dtb
+          elif [[ -f out/arch/arm64/boot/Image-dtb ]]; then
+            cp out/arch/arm64/boot/Image-dtb AnyKernel3/Image-dtb
+          elif [[ -f out/arch/arm64/boot/Image.gz ]]; then
+            cp out/arch/arm64/boot/Image.gz AnyKernel3/Image.gz
+          elif [[ -f out/arch/arm64/boot/Image ]]; then
+            cp out/arch/arm64/boot/Image AnyKernel3/Image
+          fi
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/dtbo.img
+          fi
 
-# kernel kunfigurálása
-      - name: Configure Kernel
-        run: |
-            cd kernel
-            make ARCH=arm64
-CROSS_COMPILE=aarch64.linux-gnu-defconfig
-
-# kernel fordítása
-      - name: Build Kernel
-        run: |
-            cd kernel
-            make ARCH=arm64
-CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
-
-# Kernel Image mentése
-      - name: Save Kernel Image
-        run: |
-            mkdir -p output
-            cp kernel/arch/arm64/boot/Image.gz output/
-
-# Artifacts feltöltése 
-      - name: Upload kernel build artifacts
-        uses: actions/upload-artifact@v3
-      - witch: 
-            name: kernel-build
-            path: output/
+      # 8. Kernel feltöltése
+      - name: Upload kernel to artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: output_kernel
+          path: AnyKernel3/*
