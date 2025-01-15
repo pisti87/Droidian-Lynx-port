@@ -1,4 +1,4 @@
-name: Build Pixel 7a (Lynx) Kernel (4.9) with Halium 13
+name: Build Pixel 7a (Lynx) Kernel with Halium 13
 
 on:
   workflow_dispatch:
@@ -39,7 +39,7 @@ jobs:
           cd kernel-source
           git am ../halium/patches/halium-13.0/*.patch || echo "Patch application failed"
 
-      # 6. Kernel fordítása (5.10 kernelhez)
+      # 6. Kernel fordítása 
       - name: Build kernel
         run: |
           export KBUILD_BUILD_USER="pisti87"
