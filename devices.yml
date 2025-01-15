@@ -1,0 +1,58 @@
+########################################################################
+# Basic anchors                                                        #
+########################################################################
+
+.devtools_packages:
+  packages: &devtools_packages
+    - droidian-devtools
+    - adaptation-hybris-devtools
+
+.adaptation_generic_packages:
+  packages: &adaptation_generic_packages
+    - adaptation-android-generic
+
+.google_lynx_packages:
+  packages: &google_lynx_packages
+    - adaptation-google-lynx
+    - adaptation-google-lynx-configs
+
+########################################################################
+# Recovery-flashable rootfses                                          #
+########################################################################
+
+rootfs:
+  type: rootfs
+  arch: [armhf, arm64]
+  edition: phosh
+  variant: phone
+  apilevel: [28, 29, 30, 32, 33]
+
+  packages: *adaptation_generic_packages
+
+  bundles:
+    # Developer tools bundle
+    - name: droidian-devtools
+      arch: any
+      apilevel: any
+      only_stable: yes
+      packages: *devtools_packages
+
+########################################################################
+# Device specific images                                               #
+########################################################################
+
+#
+# Google
+#
+
+# Google Pixel 7a (lynx)
+google_sargo:
+  type: image
+  arch: arm64
+  edition: phosh
+  variant: phone
+  apilevel: 33
+
+  packages: *google_lynx_packages
+
+
