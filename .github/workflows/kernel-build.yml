@@ -5,7 +5,7 @@ on:
 
 jobs:
   build-kernel:
-    runs-on: ubuntu-release
+    runs-on: ubuntu-20.04
     steps:
       # 1. Repository klónozása
       - uses: actions/checkout@v4
